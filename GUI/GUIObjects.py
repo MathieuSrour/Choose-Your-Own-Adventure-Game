@@ -64,7 +64,7 @@ class Button:
 class Text_box():
     def __init__(self,x,y,width,height,bg_color=(155,155,155),active_color=(200,200,200),
                 text_size=24, text_color=(0,0,0), border=0, border_color=(0,0,0), only_letters=False,
-                only_numbers=False, placeholder_txt="Text", placeholder_color=(100,100,100), max_chars=-1):
+                only_numbers=False, placeholder_txt="Text", placeholder_color=(100,100,100), max_chars=-1, ):
         self.x = x - width / 2
         self.y = y - height / 2
         self.width = width
@@ -231,6 +231,7 @@ class TextBox(object):
         self.render_area = None
         self.blink = True
         self.blink_timer = 0.0
+        self.cursor_position = 0
         self.process_kwargs(kwargs)
 
     def process_kwargs(self,kwargs):
@@ -253,19 +254,27 @@ class TextBox(object):
                 raise KeyError(f"InputBox accepts no keyword {kwarg}.")
         self.__dict__.update(defaults)
 
-    def get_event(self,event):
+    def get_event(self, event):
         if event.type == pg.KEYDOWN and self.active:
-            if event.key in (pg.K_RETURN,pg.K_KP_ENTER):
+            if event.key in (pg.K_RETURN, pg.K_KP_ENTER):
                 self.execute()
             elif event.key == pg.K_BACKSPACE:
-                if self.buffer:
-                    self.buffer.pop()
+                if self.cursor_position > 0:
+                    self.buffer.pop(self.cursor_position - 1)
+                    self.cursor_position -= 1
+            elif event.key == pg.K_LEFT:
+                if self.cursor_position > 0:
+                    self.cursor_position -= 1
+            elif event.key == pg.K_RIGHT:
+                if self.cursor_position < len(self.buffer):
+                    self.cursor_position += 1
             elif event.unicode in ACCEPTED:
                 if len(self.buffer) < self.max_length:
-                    self.buffer.append(event.unicode)
-
+                    self.buffer.insert(self.cursor_position, event.unicode)
+                    self.cursor_position += 1
         elif event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
             self.active = self.rect.collidepoint(event.pos)
+            self.buffer = []
 
     def execute(self):
         if self.command:
@@ -291,14 +300,31 @@ class TextBox(object):
             self.blink = not self.blink
             self.blink_timer = pg.time.get_ticks()
 
-    def draw(self,surface):
+
+
+    def draw(self, surface):
+        # Draw the outline and text box
         outline_color = self.active_color if self.active else self.outline_color
-        outline = self.rect.inflate(self.outline_width*2,self.outline_width*2)
-        surface.fill(outline_color,outline)
-        surface.fill(self.color,self.rect)
-        if self.rendered:
-            surface.blit(self.rendered,self.render_rect,self.render_area)
+        outline = self.rect.inflate(self.outline_width * 2, self.outline_width * 2)
+        surface.fill(outline_color, outline)
+        surface.fill(self.color, self.rect)
+
+        # Render the text in the buffer
+        if self.buffer:
+            text_surface = self.font.render("".join(self.buffer), True, self.font_color)
+            self.rendered = text_surface  # Update rendered text
+            surface.blit(self.rendered, self.rect.move(5, (self.rect.height - text_surface.get_height()) // 2))
+        
+        # Calculate the cursor position based on buffer content up to cursor_position
+        cursor_text = self.font.render("".join(self.buffer[:self.cursor_position]), True, self.font_color)
+        cursor_x = self.rect.x + 5 + cursor_text.get_width()  # Position based on text width up to cursor
+
+        # Draw the blinking cursor line
         if self.blink and self.active:
-            curse = self.render_area.copy()
-            curse.topleft = self.render_rect.topleft
-            surface.fill(self.font_color,(curse.right+1,curse.y,2,curse.h))
+            pygame.draw.line(surface, self.font_color, (cursor_x, self.rect.y + 5), (cursor_x, self.rect.y + self.rect.height - 5))
+
+        # Toggle cursor blink (optional)
+        self.blink_timer += 0.05
+        if self.blink_timer >= 1.0:
+            self.blink = not self.blink
+            self.blink_timer = 0.0
